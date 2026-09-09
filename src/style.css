@@ -70,7 +70,7 @@ body {
   width: 88%;
   margin: 0;
   color: #4c230f;
-  font-size: clamp(17px, calc(var(--panel-width, 430px) * 0.0628), 30px);
+  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0628), 30px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -130,7 +130,7 @@ body {
 
 .word-panel-score strong {
   color: #542813;
-  font-size: clamp(15px, calc(var(--panel-width, 430px) * 0.0535), 25px);
+  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0535), 25px);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -173,7 +173,7 @@ body {
   border-radius: 0.55em;
   color: #082a57;
   background: rgb(244 213 162 / 23%);
-  font-size: clamp(14px, calc(var(--panel-height, 700px) * 0.029), 21px);
+  font-size: clamp(10px, calc(var(--panel-height, 700px) * 0.029), 21px);
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -252,7 +252,7 @@ body {
   justify-content: center;
   gap: 0.35em;
   color: #674426;
-  font-size: clamp(13px, calc(var(--panel-height, 700px) * 0.0225), 18px);
+  font-size: clamp(9px, calc(var(--panel-height, 700px) * 0.0225), 18px);
   font-weight: 600;
   line-height: 1.18;
   text-align: center;

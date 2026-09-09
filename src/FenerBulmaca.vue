@@ -174,32 +174,43 @@ class PuzzleUI {
   }
 
   calculateLayout(width, height) {
-    const landscape = width >= 820 && width / height >= 1.12
+    // Orta boy kare ekranlarda da yan yana yerlesim, ust uste yerlesimin
+    // oyunu gereksiz yere kucultmesini engeller.
+    const landscape = (width >= 820 && width / height >= 1.12) || (width >= 560 && width / height >= 0.95)
+    const edgePadding = Phaser.Math.Clamp(width * 0.015, 9, 28)
+    const bottomPadding = Phaser.Math.Clamp(height * 0.015, 8, 18)
     const titleWidth = Math.min(width * (landscape ? 0.22 : 0.45), 375)
     const titleHeight = titleWidth / 3
 
     if (landscape) {
       const contentTop = Math.min(112, height * 0.125)
+      const frameY = Math.max(54, contentTop - 37)
       let frameHeight = Math.min(870, height * 0.95)
       let frameWidth = frameHeight * FRAME_RATIO
       let panelHeight = Math.min(765, height * 0.82)
       let panelWidth = panelHeight * PANEL_RATIO
       const gap = Math.max(12, Math.min(22, width * 0.012))
-      const maxContentWidth = width * 1.18
       const contentWidth = frameWidth + gap + panelWidth
+      const maxContentWidth = Math.max(1, width - edgePadding * 2)
+      const maxContentHeight = Math.max(1, height - frameY - bottomPadding)
+      const frameHeightScale = maxContentHeight / frameHeight
+      const panelBottomAtUnitScale =
+        frameHeight * (118 / 1205) + panelHeight * (1 - 41 / 1536)
+      const panelHeightScale = maxContentHeight / panelBottomAtUnitScale
+      const scale = Math.min(1, maxContentWidth / contentWidth, frameHeightScale, panelHeightScale)
 
-      if (contentWidth > maxContentWidth) {
-        const scale = maxContentWidth / contentWidth
-        frameHeight *= scale
-        frameWidth *= scale
-        panelHeight *= scale
-        panelWidth *= scale
-      }
+      frameHeight *= scale
+      frameWidth *= scale
+      panelHeight *= scale
+      panelWidth *= scale
 
       const totalWidth = frameWidth + gap + panelWidth
       const centeredX = (width - totalWidth) / 2
-      const startX = centeredX + width * 0.14
-      const frameY = Math.max(54, contentTop - 37)
+      // Genis ekranlarda deniz fenerine nefes alani birakmak icin oyun grubunu
+      // saga yaklastir. Dar ekranlarda kayma sifira iner; panel asla kesilmez.
+      const desiredRightShift = width * 0.14
+      const safeRightShift = Math.max(0, centeredX - edgePadding)
+      const startX = centeredX + Math.min(desiredRightShift, safeRightShift)
       const visibleTop = frameY + frameHeight * (118 / 1205)
       const panelY = visibleTop - panelHeight * (41 / 1536)
 
@@ -218,17 +229,22 @@ class PuzzleUI {
       }
     }
 
-    const frameWidth = Math.min(width - 18, 560)
-    const frameHeight = frameWidth / FRAME_RATIO
-    const frameY = Math.max(92, titleHeight * 0.78)
-    const panelY = frameY + frameHeight - 8
-    let panelHeight = Math.min(440, Math.max(250, height - panelY - 8))
+    const frameY = Math.max(72, titleHeight * 0.78)
+    let frameWidth = Math.min(width - edgePadding * 2, 560)
+    let frameHeight = frameWidth / FRAME_RATIO
+    let panelHeight = Math.min(440, frameHeight * 1.15)
     let panelWidth = panelHeight * PANEL_RATIO
+    const overlap = Math.min(8, height * 0.012)
+    const contentHeight = frameHeight + panelHeight - overlap
+    const maxContentHeight = Math.max(1, height - frameY - bottomPadding)
+    const maxPanelWidth = Math.max(1, width - edgePadding * 2)
+    const scale = Math.min(1, maxContentHeight / contentHeight, maxPanelWidth / panelWidth)
 
-    if (panelWidth > width - 24) {
-      panelWidth = width - 24
-      panelHeight = panelWidth / PANEL_RATIO
-    }
+    frameWidth *= scale
+    frameHeight *= scale
+    panelWidth *= scale
+    panelHeight *= scale
+    const panelY = frameY + frameHeight - overlap
 
     return {
       landscape,
@@ -276,7 +292,7 @@ class PuzzleUI {
         const centerX = x + cellWidth / 2
         const centerY = y + cellHeight / 2
         const key = `${row}:${col}`
-        const fontSize = Math.round(Phaser.Math.Clamp(Math.min(cellWidth, cellHeight) * 0.43, 17, 35))
+        const fontSize = Math.round(Phaser.Math.Clamp(Math.min(cellWidth, cellHeight) * 0.43, 10, 35))
         const tile = this.add(
           this.scene.add
             .image(centerX, centerY, 'ui-letter-tile', 'cell')
@@ -327,7 +343,7 @@ class PuzzleUI {
 
     const centerX = Math.round(panel.x + panel.width / 2)
     const badgeY = Math.round(panel.y + panel.height * 0.273)
-    const starSize = Math.round(Phaser.Math.Clamp(panel.height * 0.073, 44, 58))
+    const starSize = Math.round(Phaser.Math.Clamp(panel.height * 0.073, 24, 58))
     const starX = Math.round(centerX - starSize * 0.4)
     const columns = this.puzzle.words.length >= 8 ? 2 : 1
     const rowsPerColumn = Math.ceil(this.puzzle.words.length / columns)
@@ -1246,7 +1262,7 @@ onBeforeUnmount(() => {
   width: 88%;
   margin: 0;
   color: #4c230f;
-  font-size: clamp(17px, calc(var(--panel-width, 430px) * 0.0628), 30px);
+  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0628), 30px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1306,7 +1322,7 @@ onBeforeUnmount(() => {
 
 .word-panel-score strong {
   color: #542813;
-  font-size: clamp(15px, calc(var(--panel-width, 430px) * 0.0535), 25px);
+  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0535), 25px);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -1349,7 +1365,7 @@ onBeforeUnmount(() => {
   border-radius: 0.55em;
   color: #082a57;
   background: rgb(244 213 162 / 23%);
-  font-size: clamp(14px, calc(var(--panel-height, 700px) * 0.029), 21px);
+  font-size: clamp(10px, calc(var(--panel-height, 700px) * 0.029), 21px);
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1428,7 +1444,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 0.35em;
   color: #674426;
-  font-size: clamp(13px, calc(var(--panel-height, 700px) * 0.0225), 18px);
+  font-size: clamp(9px, calc(var(--panel-height, 700px) * 0.0225), 18px);
   font-weight: 600;
   line-height: 1.18;
   text-align: center;
