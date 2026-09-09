@@ -2,16 +2,16 @@
 import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Phaser from 'phaser'
 
-import lighthouseUrl from './assets/lighthouse.png'
-import seaUrl from './assets/sea.png'
-import skyUrl from './assets/sky.png'
-import starsUrl from './assets/stars.png'
-import gameTitleUrl from './assets/ui/game_title.png'
-import letterGridFrameUrl from './assets/ui/letter_grid_frame.png'
-import letterTileUrl from './assets/ui/letter_tile.png'
-import lighthouseGlowUrl from './assets/ui/lighthouse_glow.png'
-import starIconUrl from './assets/ui/star_render.png'
-import wordListPanelUrl from './assets/ui/word_list_panel.png'
+import lighthouseUrl from './assets/background/lighthouse.webp'
+import seaUrl from './assets/background/sea.webp'
+import skyUrl from './assets/background/sky.webp'
+import starsUrl from './assets/background/stars.webp'
+import lighthouseGlowUrl from './assets/background/lighthouse_glow.webp'
+import gameTitleUrl from './assets/ui/game_title.webp'
+import letterGridFrameUrl from './assets/ui/letter_grid_frame.webp'
+import letterTileUrl from './assets/ui/letter_tile.webp'
+import starIconUrl from './assets/ui/star.webp'
+import wordListPanelUrl from './assets/ui/word_list_panel.webp'
 
 const props = defineProps({
   engine: { type: Object, required: true },
@@ -35,6 +35,7 @@ const DEFAULT_PUZZLE_WORDS = {
 
 function createPuzzle(size, words, roundSeed = 0) {
   const grid = Array.from({ length: size }, () => Array(size).fill(''))
+  const wordPaths = {}
   const directions = [[0, 1], [1, 0], [1, 1], [1, -1]]
   const filler = 'ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ'
   let seed = size * 7919 + roundSeed * 104729
@@ -73,6 +74,10 @@ function createPuzzle(size, words, roundSeed = 0) {
     if (!placement) throw new Error(`${size}×${size} gridine ${word} yerleştirilemedi.`)
 
     const { row, col, rowStep, colStep } = placement
+    wordPaths[word] = [...word].map((_, index) => ({
+      row: row + rowStep * index,
+      col: col + colStep * index,
+    }))
     ;[...word].forEach((letter, index) => {
       grid[row + rowStep * index][col + colStep * index] = letter
     })
@@ -84,7 +89,7 @@ function createPuzzle(size, words, roundSeed = 0) {
     })
   })
 
-  return { grid: grid.map((row) => row.join('')), words }
+  return { grid: grid.map((row) => row.join('')), words, wordPaths }
 }
 
 const PUZZLES = Object.fromEntries(
@@ -102,6 +107,8 @@ class PuzzleUI {
     this.onStarArrive = callbacks.onStarArrive
     this.onWordFound = callbacks.onWordFound
     this.onPuzzleComplete = callbacks.onPuzzleComplete
+    this.textScale = callbacks.textScale ?? 1
+    this.durationScale = callbacks.durationScale ?? 1
     this.gridSize = initialSize
     this.puzzle = createPuzzle(initialSize, initialWords ?? DEFAULT_PUZZLE_WORDS[initialSize], initialSeed)
     this.foundWords = new Set()
@@ -138,6 +145,17 @@ class PuzzleUI {
     this.layout()
   }
 
+  setLiveSettings({ textScale = 1, durationScale = 1 } = {}) {
+    const shouldRelayout = Math.abs(this.textScale - textScale) > 0.01
+    this.textScale = textScale
+    this.durationScale = durationScale
+    if (shouldRelayout) this.layout()
+  }
+
+  duration(milliseconds) {
+    return Math.max(80, Math.round(milliseconds * this.durationScale))
+  }
+
   add(object) {
     this.root.add(object)
     return object
@@ -161,6 +179,7 @@ class PuzzleUI {
     const height = this.scene.scale.height
     if (!width || !height) return
 
+    const selectedKeys = new Set(this.selectionCells.map((cell) => cell.key))
     this.clearFlyingStars()
     this.root?.destroy(true)
     this.root = this.scene.add.container(0, 0).setDepth(10)
@@ -169,6 +188,7 @@ class PuzzleUI {
     const layout = this.calculateLayout(width, height)
     this.buildTitle(layout)
     this.buildGrid(layout)
+    this.selectionCells = this.cells.filter((cell) => selectedKeys.has(cell.key))
     this.buildWordPanel(layout)
     this.refreshVisuals()
   }
@@ -292,7 +312,9 @@ class PuzzleUI {
         const centerX = x + cellWidth / 2
         const centerY = y + cellHeight / 2
         const key = `${row}:${col}`
-        const fontSize = Math.round(Phaser.Math.Clamp(Math.min(cellWidth, cellHeight) * 0.43, 10, 35))
+        const fontSize = Math.round(
+          Phaser.Math.Clamp(Math.min(cellWidth, cellHeight) * 0.43 * this.textScale, 10, 42),
+        )
         const tile = this.add(
           this.scene.add
             .image(centerX, centerY, 'ui-letter-tile', 'cell')
@@ -344,7 +366,7 @@ class PuzzleUI {
     const centerX = Math.round(panel.x + panel.width / 2)
     const badgeY = Math.round(panel.y + panel.height * 0.273)
     const starSize = Math.round(Phaser.Math.Clamp(panel.height * 0.073, 24, 58))
-    const starX = Math.round(centerX - starSize * 0.4)
+    const starX = Math.round(panel.x + panel.width * 0.225)
     const columns = this.puzzle.words.length >= 8 ? 2 : 1
     const rowsPerColumn = Math.ceil(this.puzzle.words.length / columns)
     this.starTarget = { x: starX, y: badgeY }
@@ -371,7 +393,7 @@ class PuzzleUI {
     this.scene.tweens.add({
       targets: cell.highlight,
       alpha: active ? 1 : 0,
-      duration: active ? 220 : 170,
+      duration: this.duration(active ? 220 : 170),
       ease: 'Sine.easeOut',
     })
   }
@@ -453,7 +475,7 @@ class PuzzleUI {
       this.refreshVisuals()
       this.onWordFound?.(word)
       this.animateCompletedWord(completedCells)
-      this.animateStarReward(completedCells)
+      this.animateStarReward(completedCells, word)
       if (this.foundWords.size === this.puzzle.words.length) {
         this.onPuzzleComplete?.({
           gridSize: this.gridSize,
@@ -464,6 +486,79 @@ class PuzzleUI {
     }
 
     this.refreshVisuals()
+  }
+
+  showHint() {
+    let cell = null
+
+    if (this.selectionCells.length > 0) {
+      const selectedText = this.selectionCells
+        .map((selectedCell) => this.puzzle.grid[selectedCell.row][selectedCell.col])
+        .join('')
+      const lastSelected = this.selectionCells[this.selectionCells.length - 1]
+      const selectedKeys = new Set(this.selectionCells.map((selectedCell) => selectedCell.key))
+
+      for (const word of this.puzzle.words) {
+        if (this.foundWords.has(word)) continue
+        const forwardPath = this.puzzle.wordPaths[word] ?? []
+        const variants = [
+          { text: word, path: forwardPath },
+          { text: [...word].reverse().join(''), path: [...forwardPath].reverse() },
+        ]
+
+        for (const variant of variants) {
+          if (!variant.text.startsWith(selectedText) || selectedText.length >= variant.text.length) continue
+
+          const expectedLetter = [...variant.text][this.selectionCells.length]
+          const nextStep = variant.path[this.selectionCells.length]
+          const pathCell = nextStep
+            ? this.cells.find((candidate) => candidate.row === nextStep.row && candidate.col === nextStep.col)
+            : null
+          const pathCellIsUsable = pathCell
+            && !selectedKeys.has(pathCell.key)
+            && Math.abs(pathCell.row - lastSelected.row) <= 1
+            && Math.abs(pathCell.col - lastSelected.col) <= 1
+
+          cell = pathCellIsUsable
+            ? pathCell
+            : this.cells.find((candidate) =>
+              !selectedKeys.has(candidate.key)
+              && Math.abs(candidate.row - lastSelected.row) <= 1
+              && Math.abs(candidate.col - lastSelected.col) <= 1
+              && this.puzzle.grid[candidate.row][candidate.col] === expectedLetter,
+            )
+          if (cell) break
+        }
+        if (cell) break
+      }
+    }
+
+    if (!cell) {
+      const word = this.puzzle.words.find((candidate) => !this.foundWords.has(candidate))
+      const firstStep = word ? this.puzzle.wordPaths[word]?.[0] : null
+      cell = firstStep
+        ? this.cells.find((candidate) => candidate.row === firstStep.row && candidate.col === firstStep.col)
+        : null
+    }
+    if (!cell) return false
+
+    this.scene.tweens.killTweensOf(cell.highlight)
+    cell.highlight.setTint(0x74dfff).setAlpha(0)
+    this.scene.tweens.add({
+      targets: cell.highlight,
+      alpha: 1,
+      duration: this.duration(230),
+      yoyo: true,
+      repeat: 2,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        cell.visualState = ''
+        const selected = this.selectionCells.some((selectedCell) => selectedCell.key === cell.key)
+        const state = this.foundCells.has(cell.key) ? 'found' : selected ? 'selected' : 'idle'
+        this.drawCellBackground(cell, state)
+      },
+    })
+    return true
   }
 
   animateCompletedWord(cells) {
@@ -480,8 +575,8 @@ class PuzzleUI {
       this.scene.tweens.add({
         targets: motion,
         progress: 1,
-        delay: index * 55,
-        duration: 360,
+        delay: Math.round(index * 55 * this.durationScale),
+        duration: this.duration(360),
         ease: 'Sine.easeInOut',
         onUpdate: () => {
           const pulse = Math.sin(motion.progress * Math.PI)
@@ -510,7 +605,7 @@ class PuzzleUI {
     this.flyingStars.clear()
   }
 
-  animateStarReward(cells) {
+  animateStarReward(cells, word) {
     if (!cells.length || !this.starTarget) return
 
     const startX = cells.reduce((sum, cell) => sum + cell.centerX, 0) / cells.length
@@ -529,7 +624,7 @@ class PuzzleUI {
       scaleY: baseScale.y * 1.15,
       y: startY - Phaser.Math.Clamp(cells[0].height * 0.2, 8, 16),
       angle: -12,
-      duration: 230,
+      duration: this.duration(230),
       ease: 'Back.easeOut',
       onComplete: () => {
         if (!star.active || !this.starTarget) return
@@ -543,7 +638,7 @@ class PuzzleUI {
         this.scene.tweens.add({
           targets: motion,
           progress: 1,
-          duration: 620,
+          duration: this.duration(620),
           ease: 'Cubic.easeInOut',
           onUpdate: () => {
             if (!star.active) return
@@ -560,7 +655,7 @@ class PuzzleUI {
           onComplete: () => {
             this.flyingStars.delete(star)
             star.destroy()
-            this.onStarArrive?.()
+            this.onStarArrive?.(word)
           },
         })
       },
@@ -570,16 +665,32 @@ class PuzzleUI {
 const GRID_SIZES = [8, 10, 12, 14]
 const WORD_COUNTS = { 8: 5, 10: 8, 12: 9, 14: 12 }
 
+function clampNumber(value, minimum, maximum, fallback) {
+  if (value === null || value === undefined || value === '') return fallback
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Math.min(maximum, Math.max(minimum, numeric)) : fallback
+}
+
+function scaledPanelFont(baseSize, minimum, maximum) {
+  const value = Math.min(maximum, Math.max(minimum, baseSize * liveTextScale.value))
+  return `${Math.round(value * 10) / 10}px`
+}
+
 const gameContainer = ref(null)
+const liveTextScale = computed(() => clampNumber(live.sizeScale, 0.75, 1.5, 1))
+const liveDurationScale = computed(() => 100 / clampNumber(live.speed, 50, 200, 100))
 const gridSize = computed(() => {
   const levelDefault = { kolay: 8, orta: 10, zor: 12 }[props.params.level] ?? 8
   const requested = Number(props.params.gridSize ?? levelDefault)
   return GRID_SIZES.includes(requested) ? requested : levelDefault
 })
-const hintCount = computed(() => Number(props.params.hintCount ?? 3))
+const configuredRounds = computed(() =>
+  Math.round(clampNumber(props.params.rounds ?? props.engine.total?.value, 3, 30, 3)),
+)
+const hintCount = computed(() => Math.round(clampNumber(props.params.hintCount, 0, 9, 3)))
 const roundWords = computed(() => {
   const size = gridSize.value
-  const count = WORD_COUNTS[size]
+  const count = Math.round(clampNumber(live.elementCount, 1, WORD_COUNTS[size], WORD_COUNTS[size]))
   const level = props.params.level
   const poolWords = (props.pool ?? [])
     .filter((item) => !item?.meta?.zorluk || item.meta.zorluk === level)
@@ -605,17 +716,40 @@ const wordPanel = reactive({
   starPulse: 0,
   title: null,
 })
+const roundScore = ref(0)
+const remainingHints = ref(hintCount.value)
+const usedHints = ref(0)
+const hintBusy = ref(false)
+const roundComplete = computed(() => wordPanel.total > 0 && wordPanel.foundCount === wordPanel.total)
 let game = null
 let answerTimer = null
+let hintTimer = null
 let answerLocked = false
 let pendingRound = null
+let roundStartedAt = performance.now()
 
 function updateWordPanel(state) {
   Object.assign(wordPanel, state)
 }
 
-function pulseWordPanelStar() {
+function pulseWordPanelStar(word) {
   wordPanel.starPulse += 1
+  roundScore.value += [...String(word ?? '')].length * 10
+}
+
+function useHint() {
+  if (hintBusy.value || answerLocked || remainingHints.value <= 0 || props.engine.finished.value) return
+  const scene = game?.scene.getScene('BackgroundScene')
+  if (!scene?.showHint()) return
+
+  remainingHints.value -= 1
+  usedHints.value += 1
+  hintBusy.value = true
+  if (hintTimer) window.clearTimeout(hintTimer)
+  hintTimer = window.setTimeout(() => {
+    hintBusy.value = false
+    hintTimer = null
+  }, Math.round(1550 * liveDurationScale.value))
 }
 
 function completePuzzle(meta) {
@@ -626,8 +760,11 @@ function completePuzzle(meta) {
       tip: 'dogru',
       gridSize: meta.gridSize,
       bulunanKelimeler: meta.words,
+      ipucuKullanimi: usedHints.value,
+      tepkiSuresiMs: Math.round(performance.now() - roundStartedAt),
+      ayarlananTurSayisi: configuredRounds.value,
     }, meta.words.length)
-  }, 1100)
+  }, Math.round(1100 * liveDurationScale.value))
 }
 
 class BackgroundScene extends Phaser.Scene {
@@ -680,6 +817,8 @@ class BackgroundScene extends Phaser.Scene {
       onStarArrive: pulseWordPanelStar,
       onWordFound: () => this.playLighthouseGlow(),
       onPuzzleComplete: completePuzzle,
+      textScale: liveTextScale.value,
+      durationScale: liveDurationScale.value,
     })
     this.puzzleUI.create()
     this.scale.on('resize', this.resizeBackground, this)
@@ -1000,6 +1139,14 @@ class BackgroundScene extends Phaser.Scene {
     this.puzzleUI?.setPuzzle(size, words, seed)
   }
 
+  showHint() {
+    return this.puzzleUI?.showHint() ?? false
+  }
+
+  applyLiveSettings(textScale, durationScale) {
+    this.puzzleUI?.setLiveSettings({ textScale, durationScale })
+  }
+
   playLighthouseGlow() {
     const glow = this.backgroundLayers?.lighthouseGlow
     if (!glow || !this.coverScale) return
@@ -1016,7 +1163,7 @@ class BackgroundScene extends Phaser.Scene {
     this.tweens.add({
       targets: motion,
       progress: 1,
-      duration: 1050,
+      duration: Math.max(80, Math.round(1050 * liveDurationScale.value)),
       ease: 'Sine.easeInOut',
       onUpdate: () => {
         const progress = motion.progress
@@ -1094,13 +1241,28 @@ watch(
   ([round, finished]) => {
     if (round <= 0 || finished) return
     if (answerTimer) window.clearTimeout(answerTimer)
+    if (hintTimer) window.clearTimeout(hintTimer)
     answerTimer = null
+    hintTimer = null
     answerLocked = false
+    hintBusy.value = false
+    remainingHints.value = hintCount.value
+    usedHints.value = 0
+    roundScore.value = 0
+    roundStartedAt = performance.now()
     pendingRound = { size: gridSize.value, words: [...roundWords.value], seed: round }
     game?.scene.getScene('BackgroundScene')?.startRound(pendingRound.size, pendingRound.words, pendingRound.seed)
   },
   { immediate: true },
 )
+
+watch(hintCount, (value) => {
+  remainingHints.value = value
+})
+
+watch([liveTextScale, liveDurationScale], ([textScale, durationScale]) => {
+  game?.scene.getScene('BackgroundScene')?.applyLiveSettings(textScale, durationScale)
+})
 
 onMounted(() => {
   game = new Phaser.Game({
@@ -1126,6 +1288,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (answerTimer) window.clearTimeout(answerTimer)
+  if (hintTimer) window.clearTimeout(hintTimer)
   game?.destroy(true)
   game = null
 })
@@ -1137,7 +1300,7 @@ onBeforeUnmount(() => {
 
     <img
       v-if="wordPanel.visible && wordPanel.title"
-      class="game-title-overlay"
+      class="game-title-overlay game-image"
       :src="gameTitleUrl"
       :style="{
         left: `${wordPanel.title.x}px`,
@@ -1159,10 +1322,17 @@ onBeforeUnmount(() => {
         '--panel-width': `${wordPanel.width}px`,
         '--panel-height': `${wordPanel.height}px`,
         '--panel-star-size': `${wordPanel.starSize}px`,
+        '--panel-title-font-size': scaledPanelFont(wordPanel.width * 0.0628, 11, 30),
+        '--panel-score-font-size': scaledPanelFont(wordPanel.width * 0.0535, 11, 25),
+        '--panel-item-font-size': scaledPanelFont(wordPanel.height * 0.029, 10, 21),
+        '--panel-hint-font-size': scaledPanelFont(wordPanel.height * 0.0225, 9, 18),
+        '--star-arrive-duration': `${Math.round(360 * liveDurationScale)}ms`,
+        '--word-found-duration': `${Math.round(480 * liveDurationScale)}ms`,
+        '--check-arrive-duration': `${Math.round(520 * liveDurationScale)}ms`,
       }"
       aria-label="Aranacak kelimeler"
     >
-      <h2>ARANACAK KELİMELER</h2>
+      <h2 class="game-scale-text">ARANACAK KELİMELER</h2>
       <div class="word-panel-divider" aria-hidden="true">
         <span />
         <i />
@@ -1176,7 +1346,22 @@ onBeforeUnmount(() => {
           :src="starIconUrl"
           alt=""
         >
-        <strong>{{ wordPanel.foundCount }} / {{ wordPanel.total }}</strong>
+        <strong class="game-scale-text">{{ roundScore }} puan</strong>
+        <button
+          class="word-panel-hint-button game-cta jelly-tap game-scale-text"
+          type="button"
+          title="İpucu kullan"
+          aria-label="İpucu kullan"
+          :disabled="hintBusy || remainingHints <= 0 || roundComplete"
+          @click="useHint"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M9 18h6M10 21h4" />
+            <path d="M8.4 14.6c-1.3-1-2.1-2.6-2.1-4.4a5.7 5.7 0 0 1 11.4 0c0 1.8-.8 3.4-2.1 4.4-.7.6-1 1.1-1.1 1.7h-5c-.1-.6-.4-1.1-1.1-1.7Z" />
+            <path d="M12 2V.8M4.8 3l1 1M19.2 3l-1 1M2.7 10.2H1.3M22.7 10.2h-1.4" />
+          </svg>
+        </button>
+        <span class="word-panel-hint-count game-scale-text">{{ usedHints }} / {{ hintCount }}</span>
       </div>
 
       <div
@@ -1193,24 +1378,25 @@ onBeforeUnmount(() => {
         <div
           v-for="(word, wordIndex) in wordPanel.words"
           :key="word"
-          class="word-panel-item"
+          class="word-panel-item game-scale-text"
           :class="{
             found: wordPanel.foundWords.includes(word),
             'left-column': wordPanel.columns === 2 && wordIndex < wordPanel.rowsPerColumn,
           }"
         >
-          <span class="word-panel-status">{{ wordPanel.foundWords.includes(word) ? '✓' : '' }}</span>
+          <span class="word-panel-status" aria-hidden="true">{{ wordPanel.foundWords.includes(word) ? '✓' : '' }}</span>
           <span class="word-panel-label">{{ word }}</span>
         </div>
       </div>
 
-      <div class="word-panel-hint" aria-live="polite">
-        <span>
-          {{ wordPanel.selectionActive
-            ? 'Komşu harfleri seç, kelimeyi oluştur! Düz çizgi gerekmez.'
-            : 'Feneri yak ve kelime avına başla!' }}
+      <div class="word-panel-hint game-scale-text" aria-live="polite">
+        <span v-if="wordPanel.selectionActive" class="word-panel-instruction">
+          Komşu harfleri seç, kelimeyi oluştur!<br>
+          <small>Düz çizgi gerekmez.</small>
         </span>
-        <strong>{{ hintCount }} ipucu hakkın kaldı</strong>
+        <span v-else class="word-panel-instruction">
+          Feneri yak ve kelime avına başla!
+        </span>
       </div>
     </section>
   </main>
@@ -1220,7 +1406,10 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  overflow: hidden;
   background: #081638;
+  touch-action: manipulation;
 }
 
 .game-container {
@@ -1248,7 +1437,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 30;
   pointer-events: none;
-  color: #082a57;
+  color: var(--koak-navy, #082a57);
   font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
   font-synthesis: none;
   text-rendering: geometricPrecision;
@@ -1262,7 +1451,7 @@ onBeforeUnmount(() => {
   width: 88%;
   margin: 0;
   color: #4c230f;
-  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0628), 30px);
+  font-size: var(--panel-title-font-size, 24px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1299,12 +1488,12 @@ onBeforeUnmount(() => {
 .word-panel-score {
   position: absolute;
   top: 23.6%;
-  left: 0;
+  left: 17%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
+  justify-content: flex-start;
+  gap: 0.28em;
+  width: 66%;
   height: 7.4%;
 }
 
@@ -1317,13 +1506,21 @@ onBeforeUnmount(() => {
 }
 
 .word-panel-score img.is-pulsing {
-  animation: panel-star-arrive 360ms cubic-bezier(0.18, 0.89, 0.32, 1.35);
+  animation: panel-star-arrive var(--star-arrive-duration, 360ms) cubic-bezier(0.18, 0.89, 0.32, 1.35);
 }
 
 .word-panel-score strong {
-  color: #542813;
-  font-size: clamp(11px, calc(var(--panel-width, 430px) * 0.0535), 25px);
+  color: var(--koak-text, #542813);
+  font-size: var(--panel-score-font-size, 21px);
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.word-panel-hint-count {
+  color: #8f5928;
+  font-size: calc(var(--panel-score-font-size, 21px) * 0.78);
+  font-weight: 800;
   line-height: 1;
   white-space: nowrap;
 }
@@ -1363,9 +1560,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   padding: 0.42em 0.72em;
   border-radius: 0.55em;
-  color: #082a57;
+  color: var(--koak-navy, #082a57);
   background: rgb(244 213 162 / 23%);
-  font-size: clamp(10px, calc(var(--panel-height, 700px) * 0.029), 21px);
+  font-size: var(--panel-item-font-size, 18px);
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1416,7 +1613,7 @@ onBeforeUnmount(() => {
 .word-panel-item.found {
   color: #315f27;
   background: rgb(190 222 151 / 38%);
-  animation: word-found-settle 480ms cubic-bezier(0.2, 0.85, 0.3, 1.25);
+  animation: word-found-settle var(--word-found-duration, 480ms) cubic-bezier(0.2, 0.85, 0.3, 1.25);
 }
 
 .word-panel-item.found .word-panel-status {
@@ -1424,40 +1621,136 @@ onBeforeUnmount(() => {
   color: #fff;
   background: #38c64c;
   box-shadow: 0 2px 4px rgb(30 132 48 / 24%);
-  animation: word-check-arrive 520ms cubic-bezier(0.18, 0.89, 0.32, 1.35);
-}
-
-.word-panel-list.five-words .word-panel-item.found {
-  color: #082a57;
-  background: rgb(244 213 162 / 23%);
+  animation: word-check-arrive var(--check-arrive-duration, 520ms) cubic-bezier(0.18, 0.89, 0.32, 1.35);
 }
 
 .word-panel-hint {
   position: absolute;
-  top: 79%;
+  top: 78.5%;
   left: 11%;
   display: flex;
   width: 78%;
-  height: 13.5%;
+  height: 14.5%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35em;
+  gap: 0.28em;
   color: #674426;
-  font-size: clamp(9px, calc(var(--panel-height, 700px) * 0.0225), 18px);
+  font-size: var(--panel-hint-font-size, 15px);
   font-weight: 600;
   line-height: 1.18;
   text-align: center;
 }
 
-.word-panel-hint span {
+.word-panel-instruction {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
   max-width: 100%;
+  padding: 0 0.35em;
+  overflow-wrap: anywhere;
+  line-height: 1.22;
+  white-space: normal !important;
 }
 
-.word-panel-hint strong {
-  color: #9a642c;
+.word-panel-instruction small {
+  font: inherit;
   font-size: 0.92em;
+  font-weight: 700;
+}
+
+.word-panel-hint-button {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.45em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #9a5c1d;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 1.45em;
   font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 150ms ease, opacity 150ms ease, background-color 150ms ease;
+}
+
+.word-panel-hint-button::before {
+  position: absolute;
+  inset: 2px;
+  border: 2px solid #c8893f;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff4c9 0%, #ffd979 100%);
+  box-shadow: 0 3px 0 #9d5c25, 0 4px 8px rgb(102 55 17 / 24%);
+  content: "";
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.word-panel-hint-button svg {
+  position: relative;
+  z-index: 1;
+  width: 23px;
+  height: 23px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.word-panel-hint-button:hover:not(:disabled) {
+  background: transparent;
+}
+
+.word-panel-hint-button:hover:not(:disabled)::before {
+  background: linear-gradient(180deg, #fff8d9 0%, #ffe18a 100%);
+  transform: translateY(-1px) scale(1.04);
+}
+
+.word-panel-hint-button:active:not(:disabled) {
+  box-shadow: none;
+  transform: none;
+}
+
+.word-panel-hint-button:active:not(:disabled)::before {
+  box-shadow: 0 1px 0 #9d5c25, 0 2px 5px rgb(102 55 17 / 20%);
+  transform: translateY(2px) scale(0.98);
+}
+
+.word-panel-hint-button:focus-visible {
+  outline: 3px solid var(--koak-focus, #57bde8);
+  outline-offset: 2px;
+}
+
+.word-panel-hint-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+@media (max-width: 600px) {
+  .word-panel-hint {
+    left: 8%;
+    width: 84%;
+    font-size: max(10px, var(--panel-hint-font-size, 12px));
+  }
+
+  .word-panel-instruction {
+    line-height: 1.08;
+  }
+
+  .word-panel-hint-button {
+    margin-left: 0.2em;
+  }
 }
 
 @keyframes panel-star-arrive {

@@ -6,7 +6,7 @@ const queryGrid = Number(new URLSearchParams(window.location.search).get('grid')
 const gridSize = [8, 10, 12, 14].includes(queryGrid) ? queryGrid : 8
 
 const round = ref(1)
-const total = ref(2)
+const total = ref(3)
 const correct = ref(0)
 const points = ref(0)
 const finished = computed(() => round.value > total.value)
@@ -42,7 +42,8 @@ const params = reactive({
   hintCount: 3,
 })
 
-provide('liveSettings', { sizeScale: 1, elementCount: null, speed: 100 })
+const liveSettings = reactive({ sizeScale: 1, elementCount: null, speed: 100 })
+provide('liveSettings', liveSettings)
 </script>
 
 <template>
